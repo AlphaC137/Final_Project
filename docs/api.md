@@ -2,7 +2,7 @@
 
 ## Base URL
 ```
-Production: https://your-app.replit.app/api
+Production: https://final-project-wqlc.onrender.com/
 Development: http://localhost:5000/api
 ```
 
