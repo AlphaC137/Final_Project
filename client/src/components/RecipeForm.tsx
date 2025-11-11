@@ -35,8 +35,6 @@ export function RecipeForm({ initialData, onSubmit, onCancel, isLoading }: Recip
   const [tags, setTags] = useState<string[]>(initialData?.tags || []);
   const [tagInput, setTagInput] = useState("");
 
-  console.log("RecipeForm: Component rendered with props:", { initialData, isLoading });
-
   const form = useForm<RecipeFormData>({
     resolver: zodResolver(recipeFormSchema),
     defaultValues: {
@@ -47,9 +45,6 @@ export function RecipeForm({ initialData, onSubmit, onCancel, isLoading }: Recip
       isPublic: initialData?.isPublic ?? true,
     },
   });
-
-  console.log("RecipeForm: Form errors:", form.formState.errors);
-  console.log("RecipeForm: Form is valid:", form.formState.isValid);
 
   const addIngredient = () => {
     setIngredients([...ingredients, ""]);
@@ -91,24 +86,14 @@ export function RecipeForm({ initialData, onSubmit, onCancel, isLoading }: Recip
   };
 
   const handleSubmit = (data: RecipeFormData) => {
-    console.log("RecipeForm: Form submission started");
-    console.log("RecipeForm: Raw form data:", data);
-
     const filteredIngredients = ingredients.filter(ing => ing.trim());
     const filteredInstructions = instructions.filter(inst => inst.trim());
 
     // Custom validation for ingredients and instructions
-    if (filteredIngredients.length === 0) {
-      console.log("RecipeForm: Validation failed - no ingredients");
+    if (filteredIngredients.length === 0 || filteredInstructions.length === 0) {
       return;
     }
 
-    if (filteredInstructions.length === 0) {
-      console.log("RecipeForm: Validation failed - no instructions");
-      return;
-    }
-
-    console.log("RecipeForm: Validation passed, submitting...");
     onSubmit({
       ...data,
       ingredients: filteredIngredients,
@@ -126,10 +111,7 @@ export function RecipeForm({ initialData, onSubmit, onCancel, isLoading }: Recip
       </CardHeader>
       <CardContent>
         <form 
-          onSubmit={(e) => {
-            console.log("RecipeForm: Form submit event triggered");
-            form.handleSubmit(handleSubmit)(e);
-          }} 
+          onSubmit={form.handleSubmit(handleSubmit)} 
           className="space-y-6"
         >
           {/* Basic Information */}
@@ -319,10 +301,6 @@ export function RecipeForm({ initialData, onSubmit, onCancel, isLoading }: Recip
               type="submit"
               disabled={isLoading}
               className="primary-button"
-              onClick={(e) => {
-                console.log("RecipeForm: Save Recipe button clicked!");
-                // Don't prevent default - let the form handle it
-              }}
             >
               {isLoading ? "Saving..." : "Save Recipe"}
             </Button>

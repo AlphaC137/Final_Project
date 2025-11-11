@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import bcrypt from "bcrypt";
 import path from "path";
+import rateLimit from "express-rate-limit";
 import { storage } from "./storage";
 import { authenticateToken, type AuthenticatedRequest } from "./middleware/auth";
 import { generateToken } from "./utils/jwt";
@@ -12,6 +13,16 @@ import {
   insertRecipeSchema, 
   updateRecipeSchema 
 } from "@shared/schema";
+import { z } from "zod";
+
+// Rate limiter for authentication endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 requests per windowMs
+  message: "Too many authentication attempts, please try again later",
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Static landing page route
@@ -19,8 +30,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.sendFile(path.resolve(process.cwd(), "client", "landing.html"));
   });
 
-  // Auth routes
-  app.post("/api/auth/register", async (req, res) => {
+  // Auth routes with rate limiting
+  app.post("/api/auth/register", authLimiter, async (req, res) => {
     try {
       const userData = insertUserSchema.parse(req.body);
 
@@ -52,11 +63,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
       });
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Invalid input data",
+          errors: error.errors.map(e => ({
+            field: e.path.join('.'),
+            message: e.message
+          }))
+        });
+      }
       res.status(400).json({ message: "Invalid input data" });
     }
   });
 
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", authLimiter, async (req, res) => {
     try {
       const loginData = loginSchema.parse(req.body);
 
@@ -85,6 +105,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
       });
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Invalid input data",
+          errors: error.errors.map(e => ({
+            field: e.path.join('.'),
+            message: e.message
+          }))
+        });
+      }
       res.status(400).json({ message: "Invalid input data" });
     }
   });
@@ -126,6 +155,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Search endpoint must come BEFORE :id route to avoid matching "search" as an ID
+  app.get("/api/recipes/search", async (req, res) => {
+    try {
+      const query = req.query.q as string;
+      if (!query) {
+        return res.status(400).json({ message: "Search query required" });
+      }
+
+      const recipes = await storage.searchRecipes(query);
+      res.json(recipes);
+    } catch (error) {
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
   app.get("/api/recipes/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -143,12 +187,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/recipes", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
-      console.log("Recipe creation request:", {
-        body: req.body,
-        user: req.user,
-        headers: req.headers.authorization ? 'Token present' : 'No token'
-      });
-      
       const recipeData = insertRecipeSchema.parse(req.body);
 
       const recipe = await storage.createRecipe({
@@ -156,10 +194,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         authorId: req.user!.userId,
       });
 
-      console.log("Recipe created successfully:", recipe.id);
       res.status(201).json(recipe);
     } catch (error) {
-      console.error("Recipe creation error:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Invalid recipe data",
+          errors: error.errors.map(e => ({
+            field: e.path.join('.'),
+            message: e.message
+          }))
+        });
+      }
       if (error instanceof Error) {
         res.status(400).json({ message: error.message });
       } else {
@@ -171,12 +216,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/recipes/:id", authenticateToken, async (req: AuthenticatedRequest, res) => {
     try {
       const id = parseInt(req.params.id);
-      console.log("Recipe update request:", {
-        recipeId: id,
-        body: req.body,
-        user: req.user
-      });
-      
       const updateData = updateRecipeSchema.parse(req.body);
 
       // Check if recipe exists and belongs to user
@@ -190,10 +229,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const updatedRecipe = await storage.updateRecipe(id, updateData);
-      console.log("Recipe updated successfully:", updatedRecipe?.id);
       res.json(updatedRecipe);
     } catch (error) {
-      console.error("Recipe update error:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Invalid recipe data",
+          errors: error.errors.map(e => ({
+            field: e.path.join('.'),
+            message: e.message
+          }))
+        });
+      }
       if (error instanceof Error) {
         res.status(400).json({ message: error.message });
       } else {
@@ -222,20 +268,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         res.status(500).json({ message: "Failed to delete recipe" });
       }
-    } catch (error) {
-      res.status(500).json({ message: "Server error" });
-    }
-  });
-
-  app.get("/api/recipes/search", async (req, res) => {
-    try {
-      const query = req.query.q as string;
-      if (!query) {
-        return res.status(400).json({ message: "Search query required" });
-      }
-
-      const recipes = await storage.searchRecipes(query);
-      res.json(recipes);
     } catch (error) {
       res.status(500).json({ message: "Server error" });
     }

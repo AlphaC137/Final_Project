@@ -9,6 +9,7 @@ export class MongoStorage implements IStorage {
   private users!: Collection<any>;
   private recipes!: Collection<any>;
   private connected: boolean = false;
+  private initialized: boolean = false;
   private userIdCounter: number = 1;
   private recipeIdCounter: number = 1;
 
@@ -35,11 +36,24 @@ export class MongoStorage implements IStorage {
           ingredients: 'text' 
         });
       } catch (error: any) {
-        console.log('Indexes may already exist:', error.message);
+        // Only ignore index already exists errors
+        if (error.code !== 85 && error.code !== 86) {
+          console.error('Error creating indexes:', error.message);
+        }
       }
       
+      // Initialize ID counters atomically before marking as connected
+      await this.initializeCounters();
+      
       this.connected = true;
-      console.log('✅ MongoDB connected successfully');
+      this.initialized = true;
+      console.log('✅ MongoDB connected and initialized successfully');
+    }
+  }
+
+  private ensureInitialized() {
+    if (!this.initialized) {
+      throw new Error('Database not initialized - please wait for connection');
     }
   }
 
@@ -54,6 +68,7 @@ export class MongoStorage implements IStorage {
   // User methods
   async createUser(user: InsertUser): Promise<User> {
     await this.connect();
+    this.ensureInitialized();
     
     // Check if user already exists
     const existingUser = await this.users.findOne({
@@ -67,13 +82,12 @@ export class MongoStorage implements IStorage {
       throw new Error('User already exists');
     }
 
-    const hashedPassword = await bcrypt.hash(user.password, 10);
+    // Password should already be hashed by the caller (routes.ts)
     const userId = this.userIdCounter++;
     
     const newUser = {
       ...user,
       id: userId,
-      password: hashedPassword,
       createdAt: new Date(),
     };
     
@@ -99,10 +113,10 @@ export class MongoStorage implements IStorage {
     const user = await this.users.findOne({ username });
     return user ? user as User : undefined;
   }
-
   // Recipe methods
   async createRecipe(recipe: InsertRecipe & { authorId: number }): Promise<Recipe> {
     await this.connect();
+    this.ensureInitialized();
     
     const recipeId = this.recipeIdCounter++;
     const newRecipe = {
@@ -287,10 +301,8 @@ export class MongoStorage implements IStorage {
     return result.value ? result.value as Recipe : undefined;
   }
 
-  // Initialize counters from existing data
-  async initializeCounters() {
-    await this.connect();
-    
+  // Initialize counters from existing data (called during connect)
+  private async initializeCounters() {
     // Get highest user ID
     const userWithMaxId = await this.users.findOne({}, { sort: { id: -1 } });
     this.userIdCounter = userWithMaxId ? userWithMaxId.id + 1 : 1;
@@ -298,5 +310,13 @@ export class MongoStorage implements IStorage {
     // Get highest recipe ID
     const recipeWithMaxId = await this.recipes.findOne({}, { sort: { id: -1 } });
     this.recipeIdCounter = recipeWithMaxId ? recipeWithMaxId.id + 1 : 1;
+    
+    console.log(`🔢 Initialized counters - Users: ${this.userIdCounter}, Recipes: ${this.recipeIdCounter}`);
+  }
+
+  // Helper method to check if data exists (for mock data import)
+  async hasExistingData(): Promise<boolean> {
+    const userCount = await this.users.countDocuments();
+    return userCount > 0;
   }
 }

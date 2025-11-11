@@ -203,13 +203,12 @@ export default function Home({ searchQuery }: HomeProps) {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {sortedRecipes.map((recipe) => (
-                <Link key={recipe.id} href={`/recipe/${recipe.id}`}>
-                  <RecipeCard
-                    recipe={recipe}
-                    variant="public"
-                    onLike={handleLike}
-                  />
-                </Link>
+                <RecipeCard
+                  key={recipe.id}
+                  recipe={recipe}
+                  variant="public"
+                  onLike={handleLike}
+                />
               ))}
             </div>
           )}

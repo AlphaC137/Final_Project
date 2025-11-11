@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { users, recipes, type User, type InsertUser, type Recipe, type InsertRecipe, type UpdateRecipe, type RecipeWithAuthor } from "@shared/schema";
 import { mockUsers } from "./data/mockUsers";
 import { mockRecipes } from "./data/mockRecipes";
@@ -203,20 +204,35 @@ export class MemStorage implements IStorage {
 }
 
 // MongoDB configuration
-const mongoUri = process.env.MONGODB_URI || 'mongodb+srv://sydwell:Lebeloane@cluster0.owe4bf6.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
+const mongoUri = process.env.MONGODB_URI;
+
+if (!mongoUri) {
+  console.warn('⚠️  MONGODB_URI not found in environment variables');
+  console.warn('⚠️  Make sure your .env file exists and contains MONGODB_URI');
+}
 
 // Initialize storage
 async function initializeStorage() {
   let mongoStorage: MongoStorage | null = null;
+  
+  if (!mongoUri) {
+    console.warn("⚠️  No MongoDB URI provided, falling back to in-memory storage");
+    const memStorage = new InMemoryStorage();
+    await memStorage.connect();
+    await memStorage.initializeWithMockData();
+    storage = memStorage;
+    return;
+  }
+  
   try {
+    console.log('🔌 Attempting to connect to MongoDB...');
     mongoStorage = new MongoStorage(mongoUri);
-    await mongoStorage.connect();
-    await mongoStorage.initializeCounters();
+    await mongoStorage.connect(); // This now includes initializeCounters()
     await importMockData(mongoStorage);
     console.log('🚀 MongoDB storage initialized successfully');
     storage = mongoStorage;
   } catch (error) {
-    console.warn("MongoDB connection failed, using in-memory storage:", error);
+    console.warn("❌ MongoDB connection failed, using in-memory storage:", error);
     const memStorage = new InMemoryStorage();
     await memStorage.connect();
     await memStorage.initializeWithMockData();
@@ -227,36 +243,47 @@ async function initializeStorage() {
 // Migration function to import mock data
 async function importMockData(mongoStorage: MongoStorage) {
   try {
-
-    // Check if data already exists
-    const existingUsers = await mongoStorage.users.countDocuments();
-    if (existingUsers > 0) {
+    // Check if data already exists using the public method
+    const hasData = await mongoStorage.hasExistingData();
+    if (hasData) {
       console.log('📊 MongoDB already contains data, skipping mock data import');
       return;
     }
 
     console.log('📊 Importing mock data to MongoDB...');
 
-    // Import users
-    const userMap = new Map<number, number>(); // old ID -> new ID
+    // Import users - they map old authorIds to new user IDs
+    const authorIdMap = new Map<number, number>();
+    let userIndex = 1;
+    
     for (const mockUser of mockUsers) {
       try {
-        const user = await mongoStorage.createUser(mockUser);
-        userMap.set(mockUser.id, user.id);
+        const user = await mongoStorage.createUser(mockUser as any);
+        // Map the old author ID (1, 2, 3, etc.) to the new user ID from database
+        authorIdMap.set(userIndex++, user.id);
         console.log(`✅ Imported user: ${user.username}`);
       } catch (error: any) {
         console.log(`⚠️ User ${mockUser.username} might already exist:`, error.message);
+        userIndex++;
       }
     }
 
-    // Import recipes
+    // Import recipes with updated author IDs
     for (const mockRecipe of mockRecipes) {
       try {
-        const newAuthorId = userMap.get(mockRecipe.authorId);
+        // Get the new author ID from our map
+        const newAuthorId = authorIdMap.get(mockRecipe.authorId);
         if (newAuthorId) {
-          const { id, authorId, ...recipeData } = mockRecipe;
+          // Create recipe with the new author ID
           await mongoStorage.createRecipe({
-            ...recipeData,
+            title: mockRecipe.title,
+            description: mockRecipe.description,
+            ingredients: mockRecipe.ingredients,
+            instructions: mockRecipe.instructions,
+            tags: mockRecipe.tags,
+            imageUrl: mockRecipe.imageUrl,
+            cookTime: mockRecipe.cookTime,
+            isPublic: mockRecipe.isPublic,
             authorId: newAuthorId
           });
           console.log(`✅ Imported recipe: ${mockRecipe.title}`);

@@ -1,4 +1,4 @@
-import { Link } from "wouter";
+import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -17,9 +17,34 @@ interface RecipeCardProps {
 export function RecipeCard({ recipe, variant = "public", onLike, onEdit, onDelete }: RecipeCardProps) {
   const isPublicRecipe = "author" in recipe;
   const author = isPublicRecipe ? recipe.author : null;
+  const [, setLocation] = useLocation();
+
+  const handleCardClick = () => {
+    if (variant === "public") {
+      setLocation(`/recipe/${recipe.id}`);
+    }
+  };
+
+  const handleLikeClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onLike?.(recipe.id);
+  };
+
+  const handleEditClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onEdit?.(recipe.id);
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onDelete?.(recipe.id);
+  };
 
   return (
-    <Card className="overflow-hidden recipe-card-hover">
+    <Card 
+      className="overflow-hidden recipe-card-hover cursor-pointer" 
+      onClick={handleCardClick}
+    >
       <div className="relative">
         <img
           src={recipe.imageUrl || "https://images.unsplash.com/photo-1546548970-71785318a17b?auto=format&fit=crop&w=400&h=240"}
@@ -44,7 +69,7 @@ export function RecipeCard({ recipe, variant = "public", onLike, onEdit, onDelet
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onLike?.(recipe.id)}
+              onClick={handleLikeClick}
               className="flex items-center space-x-1 text-gray-500 hover:text-primary"
             >
               <Heart className="h-4 w-4" />
@@ -80,7 +105,7 @@ export function RecipeCard({ recipe, variant = "public", onLike, onEdit, onDelet
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => onEdit?.(recipe.id)}
+                  onClick={handleEditClick}
                   className="text-gray-400 hover:text-primary"
                 >
                   <Edit className="h-4 w-4" />
@@ -88,7 +113,7 @@ export function RecipeCard({ recipe, variant = "public", onLike, onEdit, onDelet
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => onDelete?.(recipe.id)}
+                  onClick={handleDeleteClick}
                   className="text-gray-400 hover:text-destructive"
                 >
                   <Trash2 className="h-4 w-4" />
